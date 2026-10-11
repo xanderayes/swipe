@@ -90,16 +90,29 @@ def draw_swipe_trace(draw, word, image_width):
     if len(points) < 2:
         return
     
-    # Draw smooth curve through the points
-    for i in range(len(points) - 1):
+    # Calculate descending track: start at top of first key, end at bottom of last key
+    num_points = len(points)
+    total_descent = KEY_HEIGHT  # Full height of a key
+    
+    # Adjusted points with descending y positions
+    adjusted_points = []
+    for i, (x, y) in enumerate(points):
+        # Calculate descent progress (0.0 to 1.0)
+        progress = i / (num_points - 1) if num_points > 1 else 0
+        # Calculate y offset: start at -KEY_HEIGHT/2 (top), end at +KEY_HEIGHT/2 (bottom)
+        y_offset = -KEY_HEIGHT / 2 + (progress * total_descent)
+        adjusted_points.append((x, y + y_offset))
+    
+    # Draw smooth curve through the adjusted points
+    for i in range(len(adjusted_points) - 1):
         draw.line(
-            [points[i], points[i + 1]],
+            [adjusted_points[i], adjusted_points[i + 1]],
             fill=TRACE_COLOR,
             width=TRACE_WIDTH
         )
     
     # Draw circles at each point
-    for point in points:
+    for point in adjusted_points:
         draw.ellipse(
             [point[0] - 6, point[1] - 6, point[0] + 6, point[1] + 6],
             fill=TRACE_COLOR,
