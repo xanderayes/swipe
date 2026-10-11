@@ -117,33 +117,57 @@
         }
 
         .canvas-container {
+            display: none;
+        }
+
+        .font-grid {
             display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
             justify-content: center;
             background: #f5f5f5;
             border-radius: 12px;
-            padding: 20px;
-            overflow-x: auto;
+            padding: 30px;
+            min-height: 200px;
         }
 
-        canvas {
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-
-        .word-list {
-            margin-top: 20px;
+        .symbol-container {
             display: flex;
-            flex-wrap: wrap;
+            flex-direction: column;
+            align-items: center;
             gap: 8px;
         }
 
-        .word-tag {
-            background: #e3f2fd;
-            color: #1976d2;
-            padding: 6px 12px;
-            border-radius: 20px;
+        .symbol-canvas {
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            background: white;
+        }
+
+        .symbol-label {
             font-size: 14px;
+            color: #666;
             font-weight: 500;
+        }
+
+        .text-preview {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f5f5f5;
+            border-radius: 12px;
+            display: none;
+        }
+
+        .text-preview h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .preview-canvas {
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            background: white;
+            max-width: 100%;
         }
 
         .error {
@@ -166,16 +190,19 @@
         </div>
 
         <div class="controls">
-            <button class="btn-generate" onclick="generateSwipeTracks()">Generate</button>
+            <button class="btn-generate" onclick="generateSwipeTracks()">Generate Font</button>
             <button class="btn-clear" onclick="clearInput()">Clear</button>
-            <button class="btn-download" onclick="downloadImage()">Download Image</button>
+            <button class="btn-download" onclick="downloadFont()">Download Font</button>
         </div>
 
-        <div class="canvas-container">
-            <canvas id="keyboardCanvas"></canvas>
+        <div class="font-grid" id="fontGrid">
+            <p style="color: #888; font-style: italic;">Enter words above to generate swipe symbols</p>
         </div>
 
-        <div class="word-list" id="wordList"></div>
+        <div class="text-preview" id="textPreview">
+            <h3>Text Preview (words arranged as text):</h3>
+            <canvas id="previewCanvas" class="preview-canvas"></canvas>
+        </div>
     </div>
 
     <script>
@@ -200,9 +227,8 @@
         const TRACE_COLOR = '#00c8ff';
         const TRACE_WIDTH = 4;
 
-        const canvas = document.getElementById('keyboardCanvas');
-        const ctx = canvas.getContext('2d');
         let currentWords = [];
+        let symbolCanvases = [];
 
         function getKeyPosition(letter, imageWidth) {
             letter = letter.toUpperCase();
@@ -220,7 +246,7 @@
             return null;
         }
 
-        function drawKeyboard(imageWidth, imageHeight) {
+        function drawKeyboard(ctx, imageWidth, imageHeight) {
             ctx.fillStyle = BACKGROUND_COLOR;
             ctx.fillRect(0, 0, imageWidth, imageHeight);
 
@@ -234,14 +260,12 @@
                     const x = rowStartX + colIdx * (KEY_SPACING_X + KEY_WIDTH);
                     const y = KEYBOARD_START_Y + rowIdx * (KEY_SPACING_Y + KEY_HEIGHT);
 
-                    // Draw key rectangle
                     ctx.fillStyle = KEY_COLOR;
                     ctx.strokeStyle = KEY_BORDER_COLOR;
                     ctx.lineWidth = 2;
                     ctx.fillRect(x, y, KEY_WIDTH, KEY_HEIGHT);
                     ctx.strokeRect(x, y, KEY_WIDTH, KEY_HEIGHT);
 
-                    // Draw key letter
                     ctx.fillStyle = TEXT_COLOR;
                     ctx.font = 'bold 24px Arial';
                     ctx.textAlign = 'center';
@@ -251,7 +275,7 @@
             }
         }
 
-        function drawSwipeTrace(word, imageWidth) {
+        function drawSwipeTrace(ctx, word, imageWidth, color) {
             word = word.toUpperCase();
             const points = [];
 
@@ -264,7 +288,6 @@
 
             if (points.length < 2) return;
 
-            // Calculate descending track
             const numPoints = points.length;
             const totalDescent = KEY_HEIGHT;
             const adjustedPoints = [];
@@ -278,8 +301,7 @@
                 });
             }
 
-            // Draw smooth curve
-            ctx.strokeStyle = TRACE_COLOR;
+            ctx.strokeStyle = color;
             ctx.lineWidth = TRACE_WIDTH;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
@@ -291,8 +313,7 @@
             }
             ctx.stroke();
 
-            // Draw circles at each point
-            ctx.fillStyle = TRACE_COLOR;
+            ctx.fillStyle = color;
             for (const point of adjustedPoints) {
                 ctx.beginPath();
                 ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
@@ -310,9 +331,29 @@
             };
         }
 
+        function createSymbolCanvas(word, index) {
+            const dimensions = calculateImageDimensions();
+            const canvas = document.createElement('canvas');
+            canvas.width = dimensions.width;
+            canvas.height = dimensions.height;
+            canvas.className = 'symbol-canvas';
+            canvas.style.width = '200px';
+            canvas.style.height = 'auto';
+            
+            const ctx = canvas.getContext('2d');
+            drawKeyboard(ctx, dimensions.width, dimensions.height);
+            
+            const color = TRACE_COLOR;
+            drawSwipeTrace(ctx, word, dimensions.width, color);
+            
+            return canvas;
+        }
+
         function generateSwipeTracks() {
             const input = document.getElementById('words').value.trim();
             const errorDiv = document.getElementById('error');
+            const fontGrid = document.getElementById('fontGrid');
+            const textPreview = document.getElementById('textPreview');
 
             if (!input) {
                 errorDiv.style.display = 'block';
@@ -321,107 +362,107 @@
 
             errorDiv.style.display = 'none';
 
-            // Parse words (split by newlines or spaces)
             currentWords = input.split(/[\n\s]+/).filter(word => word.length > 0);
+            symbolCanvases = [];
 
-            const dimensions = calculateImageDimensions();
-            canvas.width = dimensions.width;
-            canvas.height = dimensions.height;
-
-            // Draw keyboard
-            drawKeyboard(dimensions.width, dimensions.height);
-
-            // Draw swipe traces for all words with different colors
-            const colors = ['#00c8ff', '#ff6b6b', '#4ecdc4', '#ffe66d', '#95e1d3', '#f38181'];
+            fontGrid.innerHTML = '';
+            
             currentWords.forEach((word, index) => {
-                const originalColor = TRACE_COLOR;
-                const newColor = colors[index % colors.length];
-                // Temporarily change trace color
-                window.tempTraceColor = newColor;
+                const container = document.createElement('div');
+                container.className = 'symbol-container';
                 
-                // Override drawSwipeTrace to use temp color
-                const originalDraw = drawSwipeTrace;
-                drawSwipeTrace = function(w, iw) {
-                    const original = TRACE_COLOR;
-                    const tempColor = window.tempTraceColor || original;
-                    
-                    w = w.toUpperCase();
-                    const points = [];
-                    for (const letter of w) {
-                        const pos = getKeyPosition(letter, iw);
-                        if (pos) points.push(pos);
-                    }
-                    if (points.length < 2) return;
-                    
-                    const numPoints = points.length;
-                    const totalDescent = KEY_HEIGHT;
-                    const adjustedPoints = [];
-                    for (let i = 0; i < points.length; i++) {
-                        const progress = numPoints > 1 ? i / (numPoints - 1) : 0;
-                        const yOffset = -KEY_HEIGHT / 2 + (progress * totalDescent);
-                        adjustedPoints.push({ x: points[i].x, y: points[i].y + yOffset });
-                    }
-                    
-                    ctx.strokeStyle = tempColor;
-                    ctx.lineWidth = TRACE_WIDTH;
-                    ctx.lineCap = 'round';
-                    ctx.lineJoin = 'round';
-                    ctx.beginPath();
-                    ctx.moveTo(adjustedPoints[0].x, adjustedPoints[0].y);
-                    for (let i = 1; i < adjustedPoints.length; i++) {
-                        ctx.lineTo(adjustedPoints[i].x, adjustedPoints[i].y);
-                    }
-                    ctx.stroke();
-                    
-                    ctx.fillStyle = tempColor;
-                    for (const point of adjustedPoints) {
-                        ctx.beginPath();
-                        ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
-                        ctx.fill();
-                    }
-                };
+                const canvas = createSymbolCanvas(word, index);
+                symbolCanvases.push(canvas);
                 
-                drawSwipeTrace(word, dimensions.width);
-                drawSwipeTrace = originalDraw;
+                const label = document.createElement('div');
+                label.className = 'symbol-label';
+                label.textContent = word;
+                
+                container.appendChild(canvas);
+                container.appendChild(label);
+                fontGrid.appendChild(container);
             });
 
-            // Update word list display
-            const wordListDiv = document.getElementById('wordList');
-            wordListDiv.innerHTML = currentWords.map((word, index) => 
-                `<span class="word-tag" style="background: ${colors[index % colors.length]}20; color: ${colors[index % colors.length]};">${word}</span>`
-            ).join('');
+            // Generate text preview
+            generateTextPreview();
+            textPreview.style.display = 'block';
+        }
+
+        function generateTextPreview() {
+            const previewCanvas = document.getElementById('previewCanvas');
+            const ctx = previewCanvas.getContext('2d');
+            
+            const symbolWidth = 200;
+            const symbolHeight = 150;
+            const spacing = 20;
+            const symbolsPerRow = Math.floor(800 / (symbolWidth + spacing));
+            
+            const rows = Math.ceil(currentWords.length / symbolsPerRow);
+            previewCanvas.width = symbolsPerRow * (symbolWidth + spacing) - spacing;
+            previewCanvas.height = rows * (symbolHeight + spacing + 30) - spacing;
+            
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
+            
+            const dimensions = calculateImageDimensions();
+            const scale = symbolWidth / dimensions.width;
+            
+            currentWords.forEach((word, index) => {
+                const row = Math.floor(index / symbolsPerRow);
+                const col = index % symbolsPerRow;
+                
+                const x = col * (symbolWidth + spacing);
+                const y = row * (symbolHeight + spacing + 30);
+                
+                // Draw mini keyboard
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.scale(scale, scale);
+                
+                // Create temp canvas for this symbol
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = dimensions.width;
+                tempCanvas.height = dimensions.height;
+                const tempCtx = tempCanvas.getContext('2d');
+                drawKeyboard(tempCtx, dimensions.width, dimensions.height);
+                drawSwipeTrace(tempCtx, word, dimensions.width, TRACE_COLOR);
+                
+                ctx.drawImage(tempCanvas, 0, 0);
+                ctx.restore();
+                
+                // Draw word label
+                ctx.fillStyle = '#333';
+                ctx.font = '14px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(word, x + symbolWidth / 2, y + symbolHeight + 20);
+            });
         }
 
         function clearInput() {
             document.getElementById('words').value = '';
             document.getElementById('error').style.display = 'none';
-            document.getElementById('wordList').innerHTML = '';
+            document.getElementById('fontGrid').innerHTML = '<p style="color: #888; font-style: italic;">Enter words above to generate swipe symbols</p>';
+            document.getElementById('textPreview').style.display = 'none';
             currentWords = [];
-            
-            const dimensions = calculateImageDimensions();
-            canvas.width = dimensions.width;
-            canvas.height = dimensions.height;
-            drawKeyboard(dimensions.width, dimensions.height);
+            symbolCanvases = [];
         }
 
-        function downloadImage() {
+        function downloadFont() {
             if (currentWords.length === 0) {
-                alert('Please generate swipe tracks first');
+                alert('Please generate swipe symbols first');
                 return;
             }
             
+            const previewCanvas = document.getElementById('previewCanvas');
             const link = document.createElement('a');
-            link.download = 'swipe_tracks.png';
-            link.href = canvas.toDataURL('image/png');
+            link.download = 'swipe_font.png';
+            link.href = previewCanvas.toDataURL('image/png');
             link.click();
         }
 
-        // Initialize canvas on load
+        // Initialize on load
         window.onload = function() {
-            const dimensions = calculateImageDimensions();
-            canvas.width = dimensions.width;
-            canvas.height = dimensions.height;
-            drawKeyboard(dimensions.width, dimensions.height);
+            // Empty initialization
         };
     </script>
 </body>
