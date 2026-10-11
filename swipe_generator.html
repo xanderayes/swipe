@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swipe Track Generator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 30px;
+            max-width: 900px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            text-align: center;
+            font-size: 2em;
+        }
+
+        .input-section {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 600;
+        }
+
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 80px;
+            transition: border-color 0.3s;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .hint {
+            font-size: 14px;
+            color: #888;
+            margin-top: 6px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-generate {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-generate:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-clear {
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .btn-clear:hover {
+            background: #e0e0e0;
+        }
+
+        .btn-download {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .btn-download:hover {
+            background: #45a049;
+        }
+
+        .canvas-container {
+            display: flex;
+            justify-content: center;
+            background: #f5f5f5;
+            border-radius: 12px;
+            padding: 20px;
+            overflow-x: auto;
+        }
+
+        canvas {
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .word-list {
+            margin-top: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .word-tag {
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .error {
+            color: #d32f2f;
+            font-size: 14px;
+            margin-top: 8px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Swipe Track Generator</h1>
+        
+        <div class="input-section">
+            <label for="words">Enter words (one per line or separated by spaces):</label>
+            <textarea id="words" placeholder="hello&#10;world&#10;swipe"></textarea>
+            <div class="hint">Type multiple words to generate swipe tracks for each</div>
+            <div class="error" id="error">Please enter at least one word</div>
+        </div>
+
+        <div class="controls">
+            <button class="btn-generate" onclick="generateSwipeTracks()">Generate</button>
+            <button class="btn-clear" onclick="clearInput()">Clear</button>
+            <button class="btn-download" onclick="downloadImage()">Download Image</button>
+        </div>
+
+        <div class="canvas-container">
+            <canvas id="keyboardCanvas"></canvas>
+        </div>
+
+        <div class="word-list" id="wordList"></div>
+    </div>
+
+    <script>
+        // Keyboard layout configuration
+        const KEYBOARD_LAYOUT = [
+            ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
+            ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
+            ['Z', 'X', 'C', 'V', 'B', 'N', 'M']
+        ];
+
+        const KEY_WIDTH = 60;
+        const KEY_HEIGHT = 60;
+        const KEY_SPACING_X = 10;
+        const KEY_SPACING_Y = 15;
+        const KEYBOARD_START_X = 50;
+        const KEYBOARD_START_Y = 50;
+
+        const BACKGROUND_COLOR = '#1e1e1e';
+        const KEY_COLOR = '#3c3c3c';
+        const KEY_BORDER_COLOR = '#646464';
+        const TEXT_COLOR = '#ffffff';
+        const TRACE_COLOR = '#00c8ff';
+        const TRACE_WIDTH = 4;
+
+        const canvas = document.getElementById('keyboardCanvas');
+        const ctx = canvas.getContext('2d');
+        let currentWords = [];
+
+        function getKeyPosition(letter, imageWidth) {
+            letter = letter.toUpperCase();
+            for (let rowIdx = 0; rowIdx < KEYBOARD_LAYOUT.length; rowIdx++) {
+                const row = KEYBOARD_LAYOUT[rowIdx];
+                const colIdx = row.indexOf(letter);
+                if (colIdx !== -1) {
+                    const rowWidth = row.length * KEY_WIDTH + (row.length - 1) * KEY_SPACING_X;
+                    const rowStartX = KEYBOARD_START_X + (imageWidth - 100 - rowWidth) / 2;
+                    const x = rowStartX + colIdx * (KEY_WIDTH + KEY_SPACING_X) + KEY_WIDTH / 2;
+                    const y = KEYBOARD_START_Y + rowIdx * (KEY_HEIGHT + KEY_SPACING_Y) + KEY_HEIGHT / 2;
+                    return { x, y };
+                }
+            }
+            return null;
+        }
+
+        function drawKeyboard(imageWidth, imageHeight) {
+            ctx.fillStyle = BACKGROUND_COLOR;
+            ctx.fillRect(0, 0, imageWidth, imageHeight);
+
+            for (let rowIdx = 0; rowIdx < KEYBOARD_LAYOUT.length; rowIdx++) {
+                const row = KEYBOARD_LAYOUT[rowIdx];
+                const rowWidth = row.length * KEY_WIDTH + (row.length - 1) * KEY_SPACING_X;
+                const rowStartX = KEYBOARD_START_X + (imageWidth - 100 - rowWidth) / 2;
+
+                for (let colIdx = 0; colIdx < row.length; colIdx++) {
+                    const key = row[colIdx];
+                    const x = rowStartX + colIdx * (KEY_SPACING_X + KEY_WIDTH);
+                    const y = KEYBOARD_START_Y + rowIdx * (KEY_SPACING_Y + KEY_HEIGHT);
+
+                    // Draw key rectangle
+                    ctx.fillStyle = KEY_COLOR;
+                    ctx.strokeStyle = KEY_BORDER_COLOR;
+                    ctx.lineWidth = 2;
+                    ctx.fillRect(x, y, KEY_WIDTH, KEY_HEIGHT);
+                    ctx.strokeRect(x, y, KEY_WIDTH, KEY_HEIGHT);
+
+                    // Draw key letter
+                    ctx.fillStyle = TEXT_COLOR;
+                    ctx.font = 'bold 24px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(key, x + KEY_WIDTH / 2, y + KEY_HEIGHT / 2);
+                }
+            }
+        }
+
+        function drawSwipeTrace(word, imageWidth) {
+            word = word.toUpperCase();
+            const points = [];
+
+            for (const letter of word) {
+                const pos = getKeyPosition(letter, imageWidth);
+                if (pos) {
+                    points.push(pos);
+                }
+            }
+
+            if (points.length < 2) return;
+
+            // Calculate descending track
+            const numPoints = points.length;
+            const totalDescent = KEY_HEIGHT;
+            const adjustedPoints = [];
+
+            for (let i = 0; i < points.length; i++) {
+                const progress = numPoints > 1 ? i / (numPoints - 1) : 0;
+                const yOffset = -KEY_HEIGHT / 2 + (progress * totalDescent);
+                adjustedPoints.push({
+                    x: points[i].x,
+                    y: points[i].y + yOffset
+                });
+            }
+
+            // Draw smooth curve
+            ctx.strokeStyle = TRACE_COLOR;
+            ctx.lineWidth = TRACE_WIDTH;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            ctx.beginPath();
+            ctx.moveTo(adjustedPoints[0].x, adjustedPoints[0].y);
+            for (let i = 1; i < adjustedPoints.length; i++) {
+                ctx.lineTo(adjustedPoints[i].x, adjustedPoints[i].y);
+            }
+            ctx.stroke();
+
+            // Draw circles at each point
+            ctx.fillStyle = TRACE_COLOR;
+            for (const point of adjustedPoints) {
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function calculateImageDimensions() {
+            const maxRowLength = Math.max(...KEYBOARD_LAYOUT.map(row => row.length));
+            const keyboardWidth = maxRowLength * KEY_WIDTH + (maxRowLength - 1) * KEY_SPACING_X + 100;
+            const keyboardHeight = KEYBOARD_LAYOUT.length * (KEY_HEIGHT + KEY_SPACING_Y) + 100;
+            return {
+                width: keyboardWidth,
+                height: keyboardHeight + 50
+            };
+        }
+
+        function generateSwipeTracks() {
+            const input = document.getElementById('words').value.trim();
+            const errorDiv = document.getElementById('error');
+
+            if (!input) {
+                errorDiv.style.display = 'block';
+                return;
+            }
+
+            errorDiv.style.display = 'none';
+
+            // Parse words (split by newlines or spaces)
+            currentWords = input.split(/[\n\s]+/).filter(word => word.length > 0);
+
+            const dimensions = calculateImageDimensions();
+            canvas.width = dimensions.width;
+            canvas.height = dimensions.height;
+
+            // Draw keyboard
+            drawKeyboard(dimensions.width, dimensions.height);
+
+            // Draw swipe traces for all words with different colors
+            const colors = ['#00c8ff', '#ff6b6b', '#4ecdc4', '#ffe66d', '#95e1d3', '#f38181'];
+            currentWords.forEach((word, index) => {
+                const originalColor = TRACE_COLOR;
+                const newColor = colors[index % colors.length];
+                // Temporarily change trace color
+                window.tempTraceColor = newColor;
+                
+                // Override drawSwipeTrace to use temp color
+                const originalDraw = drawSwipeTrace;
+                drawSwipeTrace = function(w, iw) {
+                    const original = TRACE_COLOR;
+                    const tempColor = window.tempTraceColor || original;
+                    
+                    w = w.toUpperCase();
+                    const points = [];
+                    for (const letter of w) {
+                        const pos = getKeyPosition(letter, iw);
+                        if (pos) points.push(pos);
+                    }
+                    if (points.length < 2) return;
+                    
+                    const numPoints = points.length;
+                    const totalDescent = KEY_HEIGHT;
+                    const adjustedPoints = [];
+                    for (let i = 0; i < points.length; i++) {
+                        const progress = numPoints > 1 ? i / (numPoints - 1) : 0;
+                        const yOffset = -KEY_HEIGHT / 2 + (progress * totalDescent);
+                        adjustedPoints.push({ x: points[i].x, y: points[i].y + yOffset });
+                    }
+                    
+                    ctx.strokeStyle = tempColor;
+                    ctx.lineWidth = TRACE_WIDTH;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.beginPath();
+                    ctx.moveTo(adjustedPoints[0].x, adjustedPoints[0].y);
+                    for (let i = 1; i < adjustedPoints.length; i++) {
+                        ctx.lineTo(adjustedPoints[i].x, adjustedPoints[i].y);
+                    }
+                    ctx.stroke();
+                    
+                    ctx.fillStyle = tempColor;
+                    for (const point of adjustedPoints) {
+                        ctx.beginPath();
+                        ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                };
+                
+                drawSwipeTrace(word, dimensions.width);
+                drawSwipeTrace = originalDraw;
+            });
+
+            // Update word list display
+            const wordListDiv = document.getElementById('wordList');
+            wordListDiv.innerHTML = currentWords.map((word, index) => 
+                `<span class="word-tag" style="background: ${colors[index % colors.length]}20; color: ${colors[index % colors.length]};">${word}</span>`
+            ).join('');
+        }
+
+        function clearInput() {
+            document.getElementById('words').value = '';
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('wordList').innerHTML = '';
+            currentWords = [];
+            
+            const dimensions = calculateImageDimensions();
+            canvas.width = dimensions.width;
+            canvas.height = dimensions.height;
+            drawKeyboard(dimensions.width, dimensions.height);
+        }
+
+        function downloadImage() {
+            if (currentWords.length === 0) {
+                alert('Please generate swipe tracks first');
+                return;
+            }
+            
+            const link = document.createElement('a');
+            link.download = 'swipe_tracks.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        // Initialize canvas on load
+        window.onload = function() {
+            const dimensions = calculateImageDimensions();
+            canvas.width = dimensions.width;
+            canvas.height = dimensions.height;
+            drawKeyboard(dimensions.width, dimensions.height);
+        };
+    </script>
+</body>
+</html>
